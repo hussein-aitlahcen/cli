@@ -8,14 +8,29 @@
 	<url>https://github.com/cryptomator/cli</url>
 
 	<properties>
-		<cryptofs.version>2.6.5</cryptofs.version>
-		<webdav-nio.version>2.0.3</webdav-nio.version>
+	  <cryptofs.version>2.7.0-beta1</cryptofs.version>
+		<webdav-nio.version>2.0.6</webdav-nio.version>
 		<commons.cli.version>1.5.0</commons.cli.version>
-		<logback.version>1.2.13</logback.version>
-		<fuse-nio.version>1.3.3</fuse-nio.version>
+		<fuse-nio.version>5.0.0</fuse-nio.version>
 
-		<java.version>17</java.version>
+		<!-- 3rd party dependencies -->
+		<dagger.version>2.51.1</dagger.version>
+		<logback.version>1.5.7</logback.version>
+		<slf4j.version>2.0.16</slf4j.version>
+
+		<!-- build-time dependencies -->
+		<mvn-compiler.version>3.13.0</mvn-compiler.version>
+		<mvn-resources.version>3.3.1</mvn-resources.version>
+		<mvn-dependency.version>3.7.1</mvn-dependency.version>
+		<mvn-surefire.version>3.4.0</mvn-surefire.version>
+		<mvn-jar.version>3.4.2</mvn-jar.version>
+
+    <project.jdk.version>22</project.jdk.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+		<!-- Group IDs of jars that need to stay on the class path for now -->
+		<!-- remove them, as soon they got modularized or support is dropped (i.e., WebDAV) -->
+		<nonModularGroupIds>org.ow2.asm,org.apache.jackrabbit,org.apache.httpcomponents</nonModularGroupIds>
 	</properties>
 
 	<licenses>
@@ -52,6 +67,16 @@
 			<artifactId>fuse-nio-adapter</artifactId>
 			<version>${fuse-nio.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>org.cryptomator</groupId>
+			<artifactId>integrations-api</artifactId>
+			<version>1.4.0-beta2</version>
+		</dependency>
+    <dependency>
+        <groupId>org.cryptomator</groupId>
+        <artifactId>integrations-linux</artifactId>
+        <version>1.5.0-beta4</version>
+    </dependency>
 
 		<!-- Commons -->
 		<dependency>
@@ -71,46 +96,105 @@
 			<artifactId>logback-classic</artifactId>
 			<version>${logback.version}</version>
 		</dependency>
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>${slf4j.version}</version>
+    </dependency>
 	</dependencies>
 
 	<build>
+<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<version>${mvn-compiler.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-resources-plugin</artifactId>
+					<version>${mvn-resources.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-dependency-plugin</artifactId>
+					<version>${mvn-dependency.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-surefire-plugin</artifactId>
+					<version>${mvn-surefire.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-jar-plugin</artifactId>
+					<version>${mvn-jar.version}</version>
+				</plugin>
+			</plugins>
+		</pluginManagement>
 		<plugins>
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.8.1</version>
 				<configuration>
-					<source>${java.version}</source>
-					<target>${java.version}</target>
-					<release>${java.version}</release>
-					<showWarnings>true</showWarnings>
+          <enablePreview>true</enablePreview>
+					<release>${project.jdk.version}</release>
+					<annotationProcessorPaths>
+						<path>
+							<groupId>com.google.dagger</groupId>
+							<artifactId>dagger-compiler</artifactId>
+							<version>${dagger.version}</version>
+						</path>
+					</annotationProcessorPaths>
+					<compilerArgs>
+						<arg>-Adagger.fastInit=enabled</arg>
+						<arg>-Adagger.formatGeneratedSource=enabled</arg>
+						<arg>--enable-preview</arg>
+					</compilerArgs>
 				</configuration>
 			</plugin>
-
 			<plugin>
-				<artifactId>maven-assembly-plugin</artifactId>
-				<version>3.3.0</version>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+            <archive>
+                <manifest>
+							      <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                </manifest>
+            </archive>
+        </configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
 				<executions>
+					<!-- sort jars into two buckets (classpath and modulepath). exclude openjfx, which gets jlinked separately -->
 					<execution>
-						<id>make-assembly</id>
-						<phase>package</phase>
+						<id>copy-mods</id>
+						<phase>prepare-package</phase>
 						<goals>
-							<goal>single</goal>
+							<goal>copy-dependencies</goal>
 						</goals>
+						<configuration>
+							<includeScope>runtime</includeScope>
+							<outputDirectory>${project.build.directory}/mods</outputDirectory>
+							<excludeGroupIds>org.openjfx,${nonModularGroupIds}</excludeGroupIds>
+						</configuration>
+					</execution>
+					<execution>
+						<id>copy-libs</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>copy-dependencies</goal>
+						</goals>
+						<configuration>
+							<includeScope>runtime</includeScope>
+							<outputDirectory>${project.build.directory}/libs</outputDirectory>
+							<includeGroupIds>${nonModularGroupIds}</includeGroupIds>
+						</configuration>
 					</execution>
 				</executions>
-				<configuration>
-					<finalName>cryptomator-cli-${project.version}</finalName>
-					<descriptorRefs>
-						<descriptorRef>jar-with-dependencies</descriptorRef>
-					</descriptorRefs>
-					<appendAssemblyId>false</appendAssemblyId>
-					<archive>
-						<manifestEntries>
-							<Main-Class>org.cryptomator.cli.CryptomatorCli</Main-Class>
-							<Implementation-Version>${project.version}</Implementation-Version>
-						</manifestEntries>
-					</archive>
-				</configuration>
 			</plugin>
 		</plugins>
 	</build>

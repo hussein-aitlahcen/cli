@@ -1,10 +1,9 @@
 package org.cryptomator.cli.frontend;
 
-import org.cryptomator.frontend.fuse.mount.EnvironmentVariables;
-import org.cryptomator.frontend.fuse.mount.FuseMountException;
-import org.cryptomator.frontend.fuse.mount.FuseMountFactory;
-import org.cryptomator.frontend.fuse.mount.Mount;
-import org.cryptomator.frontend.fuse.mount.Mounter;
+import org.cryptomator.frontend.fuse.mount.LinuxFuseMountProvider;
+import org.cryptomator.integrations.mount.Mount;
+import org.cryptomator.integrations.mount.MountFailedException;
+import org.cryptomator.integrations.mount.UnmountFailedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,14 +29,14 @@ public class FuseMount {
 		}
 
 		try {
-			Mounter mounter = FuseMountFactory.getMounter();
-			EnvironmentVariables envVars = EnvironmentVariables.create() //
-					.withFlags(mounter.defaultMountFlags()) //
-					.withFileNameTranscoder(mounter.defaultFileNameTranscoder()) //
-					.withMountPoint(mountPoint).build();
-			mnt = mounter.mount(vaultRoot, envVars);
+      var provider = new LinuxFuseMountProvider();
+			mnt = provider
+          .forFileSystem(vaultRoot)
+          .setMountFlags(provider.getDefaultMountFlags())
+          .setMountpoint(mountPoint)
+          .mount();
 			LOG.info("Mounted to {}", mountPoint);
-		} catch (FuseMountException e) {
+		} catch (MountFailedException e) {
 			LOG.error("Can't mount: {}, error: {}", mountPoint, e.getMessage());
 			return false;
 		}
@@ -48,7 +47,7 @@ public class FuseMount {
 		try {
 			mnt.unmount();
 			LOG.info("Unmounted {}", mountPoint);
-		} catch (FuseMountException e) {
+		} catch (UnmountFailedException e) {
 			LOG.error("Can't unmount gracefully: {}. Force unmount.", e.getMessage());
 			forceUnmount();
 		}
@@ -58,7 +57,7 @@ public class FuseMount {
 		try {
 			mnt.unmountForced();
 			LOG.info("Unmounted {}", mountPoint);
-		} catch (FuseMountException e) {
+		} catch (UnmountFailedException e) {
 			LOG.error("Force unmount failed: {}", e.getMessage());
 		}
 	}
